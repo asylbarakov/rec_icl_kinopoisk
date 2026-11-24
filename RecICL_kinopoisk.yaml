@@ -1,0 +1,77 @@
+# RecICL без коллаборативной информации (rec_model: None, mode: v2) на Кинопоиске.
+# Основан на train_configs/RecICL.yaml из ym689/rec_icl.
+# Перед запуском: sed -i "s#__ROOT__#$PWD#g" RecICL_kinopoisk.yaml  (из корня вашего репозитория)
+
+model:
+  arch: mini_gpt4rec_v2 # by default
+  model_type: pretrain_qwen
+  freeze_rec: True
+  freeze_proj: True
+  freeze_lora: False
+  max_txt_len: 2048 # как у авторов для режима с контекстом
+  proj_token_num: 1
+  proj_drop: 0
+  proj_mid_times: 10
+  end_sym: "###"
+  prompt_path: "__ROOT__/prompts/RecICL_kinopoisk.txt"
+  prompt_template: '{}'
+  qwen_model: "Qwen/Qwen1.5-0.5B" # id на Hugging Face; можно указать локальную папку
+  incontext_learning: True
+  incontext_sample_len: 5 # = --k в 02_build_dataset.py
+  shuffle_train_data: True
+  user_num: -100
+  item_num: -100
+  ans_type: 'v2'
+  rec_model: None # без инъекции коллаборативной информации (как в шаблоне авторов)
+  lora_config: # у авторов для qwen 0.5b не используется
+    use_lora: False
+    r: 8
+    alpha: 16
+    target_modules: ["q_proj", "v_proj"]
+    dropout: 0.05
+  rec_config:
+    user_num: -100
+    item_num: -100
+    embedding_size: 32
+    code_mode: 'binary'
+    pretrained_path: not_have # обязательно для rec_model: None
+
+datasets:
+  amazon_ood: # имя зарегистрированного билдера в коде авторов, оставить как есть
+    incontext_learning: True
+    incontext_sample_len: 5
+    path: "__ROOT__/data/"
+    data_type: default
+    build_info:
+      storage: "__ROOT__/data/" # здесь лежат train_ood2.pkl, valid_small_ood2.pkl, test_ood2.pkl
+
+run:
+  task: rec_pretrain
+  lr_sched: "linear_warmup_cosine_lr"
+  init_lr: 5e-5
+  min_lr: 5e-6
+  warmup_lr: 1e-5
+  mode: 'v2' # v2 = без инъекции CF
+  weight_decay: 0.01
+  # у авторов 200 эпох x 500 итераций; для ~6-8 тыс. обучающих окон это слишком много.
+  # 30 x 500 x batch 2 = 30 тыс. сэмплов, примерно 4-5 проходов по train. Скорректируем после замера скорости.
+  max_epoch: 30
+  iters_per_epoch: 500
+  batch_size_train: 2
+  batch_size_eval: 4 # 8 у авторов; для 8 ГБ VRAM безопаснее 4
+  num_workers: 2
+  warmup_steps: 200
+
+  seed: 42
+  output_dir: "__ROOT__/output/"
+
+  amp: False
+  evaluate: False # False: обучение, True: только оценка (тогда задать ckpt)
+  train_splits: ["train"]
+  valid_splits: ["valid"]
+  test_splits: ["test", "valid"]
+
+  device: "cuda"
+  world_size: 1
+  dist_url: "env://"
+  distributed: True
